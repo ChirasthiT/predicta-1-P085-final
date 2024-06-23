@@ -1,0 +1,48 @@
+# Normalize the data
+scaler = MinMaxScaler()
+scaled_data = scaler.fit_transform(df[['avg_temp_c', 'min_temp_c', 'max_temp_c', 'precipitation_mm', 'snow_depth_mm', 'avg_wind_dir_deg', 'avg_wind_speed_kmh']])
+
+# Prepare data for LSTM
+def create_dataset(data, timestep):
+    X, y = [], []
+    for i in range(timestep, len(data)):
+        X.append(data[i-timestep:i, :])
+        y.append(data[i, 0])  # Predicting avg_temp_c
+    return np.array(X), np.array(y)
+
+timestep = 12  # Example timestep, adjust based on your data characteristics
+X, y = create_dataset(scaled_data, timestep)
+
+# Split into train and test sets
+train_size = int(len(X) * 0.8)
+X_train, X_test = X[:train_size], X[train_size:]
+y_train, y_test = y[:train_size], y[train_size:]
+
+# Build LSTM model
+model_lstm = Sequential()
+model_lstm.add(LSTM(units=50, return_sequences=True, input_shape=(X_train.shape[1], X_train.shape[2])))
+model_lstm.add(LSTM(units=50))
+model_lstm.add(Dense(units=1))
+
+model_lstm.compile(optimizer='adam', loss='mean_squared_error')
+
+# Train LSTM model
+model_lstm.fit(X_train, y_train, epochs=50, batch_size=32)
+
+# Predictions
+forecast_lstm = model_lstm.predict(X_test)
+forecast_lstm = scaler.inverse_transform(np.concatenate((forecast_lstm, X_test[:, -1, 1:]), axis=1))[:, 0]  # Inverse transform to get actual values
+
+# Calculate MSE
+mse_lstm = mean_squared_error(y_test, forecast_lstm)
+print(f'Mean Squared Error (LSTM): {mse_lstm}')
+
+# Plot results
+plt.figure(figsize=(12, 6))
+plt.plot(df.index[train_size+timestep:], y_test, label='Test')
+plt.plot(df.index[train_size+timestep:], forecast_lstm, label='Forecast (LSTM)')
+plt.legend()
+plt.title('LSTM Forecasting')
+plt.xlabel('Date')
+plt.ylabel('Average Temperature (C)')
+plt.show()
